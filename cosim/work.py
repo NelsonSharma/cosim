@@ -28,7 +28,7 @@ parsed = argp.parse_args()
 # imports
 # ------------------------------------------------------------------------------------------
 
-import logging, subprocess, time, datetime, json, random
+import logging, subprocess, datetime, json, random
 from sys import exit
 from flask import Flask, request, send_file, abort # redirect, url_for,
 from waitress import serve 
@@ -101,8 +101,6 @@ sprint(f'↪ Data directory is {DATADIR}')
 
 EXESCRIPT = f'{parsed.script}' 
 if not EXESCRIPT: fexit(f'[!] Tasks executor was not specified')
-EXESCRIPT=os.path.abspath(EXESCRIPT)
-if not os.path.isfile(EXESCRIPT): fexit(f'[!] Tasks executor was not found')
 sprint(f'↪ Tasks executor is {EXESCRIPT}')
 
 # ------------------------------------------------------------------------------------------
@@ -165,10 +163,12 @@ def route_note():
     taskid = datainfo['uid']
     sprint(f'Recived data for {taskid}')
     global TASKQ
+    sprint(f'Current Queue {len(TASKQ)} TaskQ: {TASKQ=}')
     for o,url in datainfo['outputs'].items(): TASKQ[taskid]["inget"][o] = url
     launched = [] # check which task can be launched
     for uid, taskinfo in TASKQ.items():
         can_launch = not (False in [ i in taskinfo["inget"] for i in taskinfo['inputs'] ])
+        sprint(f'Taks {uid} - {can_launch} \n {taskinfo}')
         if can_launch: 
             taskpath = os.path.join(TASKDIR, f'{uid}.json')
             with open(taskpath, 'w') as f: json.dump(taskinfo, f)
@@ -181,6 +181,7 @@ def route_note():
                 "--log", f'{uid}.log',
                 ])
             launched.append(uid)
+    sprint(f'Lanch {len(launched)} Tasks: {launched=}')
     if launched:
         for uid in launched: del TASKQ[uid]
     return {"received": taskid, "data": list(datainfo['outputs'].keys())}, 200

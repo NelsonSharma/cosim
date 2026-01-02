@@ -1,17 +1,8 @@
+
 import networkx as nx
 import matplotlib.pyplot as plt
 
 class Flow(nx.DiGraph):
-    
-    """
-    Example: 
-        info = {
-            "A": {"inputs": ("x1",),          "outputs": ("y1", "y2",),  }, # first task is entry task - should have only one input
-            "B": {"inputs": ("y1",),          "outputs": ("z1",),        },
-            "C": {"inputs": ("y2",),          "outputs": ("z2",),        },
-            "D": {"inputs": ("z2", "z1",),    "outputs": ("out",),       }, # last task is exit task - should have only one output
-        }
-    """
 
     def __init__(self, **info): 
         super().__init__()
@@ -38,7 +29,6 @@ class Flow(nx.DiGraph):
         for layer, nodes in enumerate(self.LAYERS):
             for node in nodes: self.nodes[node]["subset"] = layer
         
-
     def render(self, layout="spectral_layout", **layoutargs):
         """
         spring_layout
@@ -60,5 +50,4 @@ class Flow(nx.DiGraph):
         nx.draw(self, pos, with_labels=True, node_color=node_colors)
         nx.draw_networkx_edge_labels(self, pos, edge_labels=edge_labels)
         plt.show()
-
 

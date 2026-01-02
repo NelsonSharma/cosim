@@ -28,7 +28,7 @@ def ImportCustomModule(python_file:str, python_object:str='', do_initialize:bool
 # ------------------------------------------------------------------------------------------
 # arguments parsing
 # ------------------------------------------------------------------------------------------
-import argparse, os, json, requests, io, pickle
+import argparse, os, json, requests, io, pickle, time
 from sys import exit
 argp = argparse.ArgumentParser()
 argp.add_argument('--info', type=str, default='')
@@ -37,6 +37,8 @@ argp.add_argument('--mods', type=str, default='')
 argp.add_argument('--log', type=str, default='')
 parsed = argp.parse_args()
 
+# ------------------------------------------------------------------------------------------
+TS1 = time.perf_counter() # start_setup
 # ------------------------------------------------------------------------------------------
 WORKDIR = f'{parsed.base}' 
 if not WORKDIR: exit(f'Work dir not provided')
@@ -75,10 +77,7 @@ else:
         logging.error(msg) 
         exit()
 
-# ------------------------------------------------------------------------------------------
 print(f'\n============================================================\n')
-# ------------------------------------------------------------------------------------------
-
 J = parsed.info
 if not J: fexit(f'No task information provided')
 J = os.path.abspath(J)
@@ -86,9 +85,10 @@ if not os.path.isfile(J): fexit(f'No task found at {J}')
 with open(J, 'r') as j: task = json.load(j)
 sprint(f'Start Task:\n{task["uid"]}')
 sprint('\n')
-
 sprint(f'\n{task=}\n')
-
+# ------------------------------------------------------------------------------------------
+TS2 = time.perf_counter() # _end_setup_start_input_load
+# ------------------------------------------------------------------------------------------
 # get the inputs
 dargs = {}
 for itask in task['inputs']:
@@ -96,24 +96,19 @@ for itask in task['inputs']:
     ipath = os.path.join(DATADIR, iurl)
     if not os.path.isfile(ipath): fexit(f'Failed to fetch inputs from {ipath}')
     with open(ipath, 'rb') as j: dargs[itask] = pickle.load(j)
-    # response = requests.get(url=iurl)
-    # sprint(f"fetching input {itask} from {iurl=} ... {response.status_code}")
-    # if response.status_code!=200: fexit(f'Failed to fetch inputs')
-    # buffer = io.BytesIO()
-    # buffer.write(response._content)
-    # buffer.seek(0)
-    # dargs[itask] = pickle.loads(buffer.getbuffer())
-    #del buffer
-
+# ------------------------------------------------------------------------------------------
+TS3 = time.perf_counter() # _end_input_load_start_task
+# ------------------------------------------------------------------------------------------
 # import task to be performed
 taskF, failed = ImportCustomModule(python_file=os.path.join(MODSDIR, f"{task['name']}.py"), python_object='main')
 if failed: exit(f'Could not load task from {taskF}, {failed}')
-
 # execute task
 sprint(f'Executing task {taskF.__name__}')
 douts = taskF(**dargs)
+# ------------------------------------------------------------------------------------------
+TS4 = time.perf_counter() # __end_task_start_send_output
+# ------------------------------------------------------------------------------------------
 sprint(f'Finished executing task {taskF.__name__}\noutputs={douts}\n')
-
 # send outputs
 for oname,iout in zip(task['outputs'], douts):
     
@@ -141,4 +136,10 @@ for oname,iout in zip(task['outputs'], douts):
     )
     sprint(f'Notification-sent, response code is {response.status_code}')
 
-sprint(f'Finished Task:\n{task["uid"]}')
+# ------------------------------------------------------------------------------------------
+TS5 = time.perf_counter() # __end_send_output
+# ------------------------------------------------------------------------------------------
+
+TS = (TS1, TS2, TS3, TS4, TS5,)
+sprint(f'Finished Task:\n{task["uid"]}\n⌛:{TS}:\n')
+# ------------------------------------------------------------------------------------------
