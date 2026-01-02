@@ -7,38 +7,38 @@ if __name__!='__main__': exit(f'[!] can not import {__name__}.{__file__}')
 # ------------------------------------------------------------------------------------------
 import argparse, os
 argp = argparse.ArgumentParser()
-argp.add_argument('--mods',            type=str, default='')
-argp.add_argument('--base',             type=str, default='base')
-argp.add_argument('--script',            type=str, default='python3')
-argp.add_argument('--maxupsize',        type=str, default='500GB',) 
-argp.add_argument('--maxconnect',       type=int, default=1000,) 
-argp.add_argument('--threads',          type=int, default=1,) 
-argp.add_argument('--host',             type=str, default='127.0.0.1')
-argp.add_argument('--port',             type=str, default='9000',)
-argp.add_argument('--verbose',          type=int, default=1)
-argp.add_argument('--log',              type=str, default='log.txt')
-argp.add_argument('--secret',           type=str, default='')
-argp.add_argument('--https',            type=int, default=0, help='set to 1 if reverse proxy with https is used')
+
+argp.add_argument('--mods',            type=str, default='',        help='location of external modules (for custom tasks)')
+argp.add_argument('--base',            type=str, default='base',    help='base directory to store and serve files')
+argp.add_argument('--script',          type=str, default='python3', help='python executable to run tasks')
+argp.add_argument('--maxupsize',       type=str, default='500GB',   help='http_body_size for waitress',) 
+argp.add_argument('--maxconnect',      type=int, default=1000,      help='maximum number of connections allowed') 
+argp.add_argument('--threads',         type=int, default=1,         help='waitress thread count') 
+
+argp.add_argument('--host',            type=str, default='127.0.0.1',      help='waitress server-interface, keep 0.0.0.0 to serve on all interfaces')
+argp.add_argument('--port',            type=str, default='9000',           help='waitress server-port')
+
+argp.add_argument('--log',             type=str, default='log.txt', help='keep blank for no logging')
+argp.add_argument('--verbose',         type=int, default=1,         help='set to 0 for no verbose')
+argp.add_argument('--secret',          type=str, default='',        help='fask secret, keep blank to generate new on run')
+argp.add_argument('--https',           type=int, default=0,         help='set to 1 if reverse proxy with https is used')
 parsed = argp.parse_args()
 
 # ------------------------------------------------------------------------------------------
 # imports
 # ------------------------------------------------------------------------------------------
-import logging
-import subprocess, time
-import datetime, json, random
-#import pika
+
+import logging, subprocess, time, datetime, json, random
 from sys import exit
-PROXY_FIX=bool(parsed.https)
 from flask import Flask, request, send_file, abort # redirect, url_for,
-if PROXY_FIX: from werkzeug.middleware.proxy_fix import ProxyFix
 from waitress import serve 
 
-def VALIDATE_PATH(base, req):
-    target = os.path.abspath(os.path.join(base, req))
-    rel = os.path.relpath(target, base)
-    if rel.startswith(os.pardir + os.sep) or rel == os.pardir: return None
-    else: return target
+PROXY_FIX=bool(parsed.https)
+if PROXY_FIX: from werkzeug.middleware.proxy_fix import ProxyFix
+
+# ------------------------------------------------------------------------------------------
+# Directories
+# ------------------------------------------------------------------------------------------
 
 WORKDIR = f'{parsed.base}' 
 if not WORKDIR: WORKDIR = os.getcwd()
@@ -47,10 +47,11 @@ try: os.makedirs(WORKDIR, exist_ok=True)
 except: exit(f'[!] Workspace directory was not found and could not be created')
 TASKDIR = os.path.join(WORKDIR, "tasks")
 DATADIR = os.path.join(WORKDIR, "data")
+
 # ------------------------------------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------------------------------------
-#def fnow(format): return datetime.datetime.strftime(datetime.datetime.now(), format)
+
 LOGF = f'{parsed.log}' 
 LOGFILE = None
 if LOGF and parsed.verbose: 
@@ -65,6 +66,7 @@ if LOGF and parsed.verbose:
         logger = logging.getLogger()
         logger.addHandler(console_handler)
     except: exit(f'[!] Logging could not be setup at {LOGFILE}')
+
 # ------------------------------------------------------------------------------------------
 # verbose level
 # ------------------------------------------------------------------------------------------
@@ -81,14 +83,13 @@ else:
             logging.error(msg) 
             exit()
 
-
-#%% [INITIALIZATION] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+# ------------------------------------------------------------------------------------------
+# Initialization
 # ------------------------------------------------------------------------------------------
 sprint(f'Starting...')
 if PROXY_FIX: sprint(f'↪ PROXY_FIX is True, assume that reverse proxy engine is running ... ')
 sprint(f'↪ Logging @ {LOGFILE}')
 sprint(f'↪ Work directory is {WORKDIR}')
-
 
 try: os.makedirs(TASKDIR, exist_ok=True)
 except: fexit(f'[!] Tasks directory was not found and could not be created at {TASKDIR}')
@@ -104,8 +105,31 @@ EXESCRIPT=os.path.abspath(EXESCRIPT)
 if not os.path.isfile(EXESCRIPT): fexit(f'[!] Tasks executor was not found')
 sprint(f'↪ Tasks executor is {EXESCRIPT}')
 
+# ------------------------------------------------------------------------------------------
+# Globals
+# ------------------------------------------------------------------------------------------
 
-#%% [APP DEFINE] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+TASKQ = {} # maintains a dict of pending tasks
+def PrintQ():
+    sprint("\n\nTask Queue:")
+    for uid, info in TASKQ.items():
+        sprint(f'Task-ID: {uid}')
+        for k,v in info.items(): sprint(f'\t{k}: {v}')
+
+def VALIDATE_PATH(base, req):
+    target = os.path.abspath(os.path.join(base, req))
+    rel = os.path.relpath(target, base)
+    if rel.startswith(os.pardir + os.sep) or rel == os.pardir: return None
+    else: return target
+
+def str2bytes(size):
+    sizes = dict(KB=2**10, MB=2**20, GB=2**30, TB=2**40)
+    return int(float(size[:-2])*sizes.get(size[-2:].upper(), 0))
+
+# ------------------------------------------------------------------------------------------
+# Flask App Define
+# ------------------------------------------------------------------------------------------
+
 app = Flask(
     __name__,
     static_folder=WORKDIR,      # Set your custom static folder path here
@@ -116,82 +140,62 @@ app = Flask(
 if PROXY_FIX: app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = parsed.secret if parsed.secret else f'{random.randint(11111, 99999)}'
 
-TASKQ = {}
 
-def PrintQ():
-    sprint("\n\nTask Queue:")
-    for uid, info in TASKQ.items():
-        sprint(f'Task-ID: {uid}')
-        for k,v in info.items():
-            sprint(f'\t{k}: {v}')
-    sprint('\n')
+# ------------------------------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------------------------------
 
 @app.route("/add", methods=["POST"])
 @app.route("/add/", methods=["POST"])
 def route_add():
+    """ adds task to device's TASKQ """
     global TASKQ
     taskinfo = request.get_json()
     taskid = taskinfo['uid']
     sprint(f'Recived Task {taskid}')
     TASKQ[taskid] = {**taskinfo}
     TASKQ[taskid]["inget"] = {} # initialize waiting queue
-    
-    PrintQ()
-
     return {"received": taskid}, 200
 
-@app.route("/send", methods=["POST"])
-@app.route("/send/", methods=["POST"])
-def route_send():
+@app.route("/note", methods=["POST"])
+@app.route("/note/", methods=["POST"])
+def route_note():
+    """ signals availablibity of outputs/inputs """
     datainfo = request.get_json()
     taskid = datainfo['uid']
     sprint(f'Recived data for {taskid}')
     global TASKQ
-    for o,url in datainfo['outputs'].items(): 
-        sprint(f'\t {o}: {url}')
-        TASKQ[taskid]["inget"][o] = url
-        # curl -o myfile.txt https://example.com/file.txt
-        #outname = f'{taskid}_{os.path.basename(url)}'
-        #outfile = os.path.join(basei, outname)
-        #subprocess.Popen(["curl" "-o" f"{outfile}" f'{url}'])
-
-    # check which task can be launched
-    launched = []
+    for o,url in datainfo['outputs'].items(): TASKQ[taskid]["inget"][o] = url
+    launched = [] # check which task can be launched
     for uid, taskinfo in TASKQ.items():
-        #sprint(f'\n🟢 check {uid}, {taskinfo}\n')
         can_launch = not (False in [ i in taskinfo["inget"] for i in taskinfo['inputs'] ])
         if can_launch: 
             taskpath = os.path.join(TASKDIR, f'{uid}.json')
             with open(taskpath, 'w') as f: json.dump(taskinfo, f)
             sprint(f'Starting task {uid} using {taskpath}')
-            subprocess.Popen([f"{EXESCRIPT}", "-m", "cosim.run", "--mods", f'{parsed.mods}', "--base", f"{WORKDIR}", "--info", f'{taskpath}', "--point", f"{'https' if PROXY_FIX else 'http' }://{parsed.host}:{parsed.port}" ])
+            subprocess.Popen([
+                f"{EXESCRIPT}", "-m", "cosim.run", 
+                "--mods", f'{parsed.mods}', 
+                "--base", f"{WORKDIR}", 
+                "--info", f'{taskpath}', 
+                ])
             launched.append(uid)
     if launched:
-        sprint(f'Removing lanched {launched}')
         for uid in launched: del TASKQ[uid]
-    
-    PrintQ()
     return {"received": taskid, "data": list(datainfo['outputs'].keys())}, 200
-
-
 
 @app.route("/out", methods=["POST"])
 @app.route("/out/", methods=["POST"])
 def route_out():
+    """ signals avavilability of final output """
     datainfo = request.get_json()
     taskid = datainfo['uid'][:-1]
     sprint(f'Recived output for {taskid}')
     for o,url in datainfo['outputs'].items(): 
-        sprint(f'\t {o}: {url}')
-        # curl -o myfile.txt https://example.com/file.txt
-        #outname = f'{taskid}_{os.path.basename(url)}'
-        outfile = os.path.join(DATADIR, o)
-        result = subprocess.run(["curl", "-o", f"{outfile}", f'{url}'],capture_output=True, text=True) 
-        sprint(f' ⬇️ [{result.returncode}] \n{result.stdout}')
-
+        outfile = os.path.join(DATADIR, url)
+        #result = subprocess.run(["curl", "-o", f"{outfile}", f'{url}'],capture_output=True, text=True) 
+        sprint(f'Result {taskid}.{o}\n{url} ⬇️ [{outfile}]')
     return {"received": taskid, "data": list(datainfo['outputs'].keys())}, 200
-
-
 
 @app.route('/data', methods =['GET', 'POST'], defaults={'req_path': ''})
 @app.route('/data/<path:req_path>', methods =['GET', 'POST'],)
@@ -216,16 +220,6 @@ def route_data(req_path):
     else: return abort(404)
 
 
-# @app.route("/exe", methods=["POST"])
-# @app.route("/exe/", methods=["POST"])
-# def route_exe():
-#     Px = subprocess.Popen([f"{EXESCRIPT}", "--info", f'"{json.dumps(request.get_json())}"'])
-#     return {"received": Px.pid}, 200
-
-# ------------------------------------------------------------------------------------------
-def str2bytes(size):
-    sizes = dict(KB=2**10, MB=2**20, GB=2**30, TB=2**40)
-    return int(float(size[:-2])*sizes.get(size[-2:].upper(), 0))
 # ------------------------------------------------------------------------------------------
 start_time = datetime.datetime.now()
 serve(app, # https://docs.pylonsproject.org/projects/waitress/en/stable/runner.html
@@ -240,3 +234,4 @@ end_time = datetime.datetime.now()
 
 sprint('◉ server up-time was [{}]'.format(end_time - start_time))
 sprint(f'...Finished!')
+# ------------------------------------------------------------------------------------------
