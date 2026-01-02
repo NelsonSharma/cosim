@@ -34,6 +34,7 @@ argp = argparse.ArgumentParser()
 argp.add_argument('--info', type=str, default='')
 argp.add_argument('--base', type=str, default='')
 argp.add_argument('--mods', type=str, default='')
+argp.add_argument('--log', type=str, default='')
 parsed = argp.parse_args()
 
 # ------------------------------------------------------------------------------------------
@@ -50,7 +51,8 @@ MODSDIR=os.path.abspath(MODSDIR)
 # Logging
 # ------------------------------------------------------------------------------------------
 import logging
-LOGF = os.path.join(WORKDIR, 'run.txt')
+if not parsed.log: exit(f'log file not specified')
+LOGF = os.path.join(WORKDIR, f'{parsed.log}')
 LOGFILE = None
 if LOGF: 
     LOGFILENAME = f'{LOGF}'
@@ -121,13 +123,13 @@ for oname,iout in zip(task['outputs'], douts):
     #with open(filepath, 'wb') as j: pickle.dump(iout, j)
     buffer.write(pickle.dumps(iout))
     buffer.seek(0)
-    ntask, nloc, nurl = task['outsend'][oname] # "outsend": {"y1": ["tB", "E", "http://127.0.0.1:9801"]
+    ntask, nloc, xurl, nport, dport = task['outsend'][oname] # "outsend": {"y1": ["tB", "E", "http://127.0.0.1", nport, dport]
     filename = f'{task["uid"]}_{oname}'
-    response=requests.post(f'{nurl}/data/{filename}', files={"data":buffer})
+    response=requests.post(f'{xurl}:{dport}/data/{filename}', files={"data":buffer})
     sprint(f'Data-sent, response code is {response.status_code}')
     del buffer
     epoint = 'note' if ntask else 'out'
-    eurl=f'{nurl}/{epoint}'
+    eurl=f'{xurl}:{nport}/{epoint}'
     etaskid = f'{task["fid"]}_{ntask}'
     sprint(f'Sending task {etaskid} output {oname} to {eurl}')
     response = requests.post(

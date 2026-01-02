@@ -18,7 +18,7 @@ argp.add_argument('--threads',         type=int, default=1,         help='waitre
 argp.add_argument('--host',            type=str, default='127.0.0.1',      help='waitress server-interface, keep 0.0.0.0 to serve on all interfaces')
 argp.add_argument('--port',            type=str, default='9000',           help='waitress server-port')
 
-argp.add_argument('--log',             type=str, default='log.txt', help='keep blank for no logging')
+argp.add_argument('--log',             type=str, default='log.txt',  help='keep blank for no logging')
 argp.add_argument('--verbose',         type=int, default=1,         help='set to 0 for no verbose')
 argp.add_argument('--secret',          type=str, default='',        help='fask secret, keep blank to generate new on run')
 argp.add_argument('--https',           type=int, default=0,         help='set to 1 if reverse proxy with https is used')
@@ -178,6 +178,7 @@ def route_note():
                 "--mods", f'{parsed.mods}', 
                 "--base", f"{WORKDIR}", 
                 "--info", f'{taskpath}', 
+                "--log", f'{uid}.log',
                 ])
             launched.append(uid)
     if launched:
@@ -213,6 +214,7 @@ def route_data(req_path):
         for fk, fv in request.files.items(): 
             try: 
                 fv.save(abs_path)
+                sprint(f'uploaded at {req_path} via {request.remote_addr}')
                 success=1
             except: pass
             break # only one file allowed
