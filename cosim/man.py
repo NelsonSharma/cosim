@@ -8,8 +8,9 @@ class Manager:
     def NewInfra(list_of_nodes):
         def defaultnode(node_name): return dict(
             name=node_name,
-            host="<server-ip>",
+            nhost="<notify-ip>",
             nport='<notify-port>',
+            dhost="<data-ip>",
             dport='<data-port>',
             https = False,
             xy = (0.0, 0.0),
@@ -20,8 +21,8 @@ class Manager:
     def NodeUrls(cnode):
         #cnode = infra[decision[node]]
         s = ('s' if cnode['https'] else '')
-        host, nport, dport = cnode['host'], cnode['nport'], cnode['dport']
-        return f'http{s}://{host}:{nport}', f'http{s}://{host}:{dport}'
+        nhost, dhost, nport, dport = cnode['nhost'], cnode['dhost'], cnode['nport'], cnode['dport']
+        return f'http{s}://{nhost}:{nport}', f'http{s}://{dhost}:{dport}'
     
     @staticmethod
     def GetDecision(flow, infra):

@@ -7,7 +7,8 @@ import datetime, os, json, pickle, importlib.util
 # ------------------------------------------------------------------------------------------
 
 GTISEP = '_' # task id seperator
-
+MODSEP = "." # module.caller
+DEFCALL = "main" # default caller
 # ------------------------------------------------------------------------------------------
 # Custom Functions
 # ------------------------------------------------------------------------------------------
@@ -17,7 +18,7 @@ def now(start:str='', sep:str='', end:str='') -> str:
 
 # ------------------------------------------------------------------------------------------
 
-def ImportCustomModule(python_file:str, python_object:str='', do_initialize:bool=False):
+def ImportCustomModule(python_file:str, python_object:list):
     r""" Import a custom module from a python file and optionally initialize it """
     cpath = os.path.abspath(python_file)
     failed=""
@@ -32,8 +33,7 @@ def ImportCustomModule(python_file:str, python_object:str='', do_initialize:bool
         if success: 
             if python_object:
                 try:
-                    cmodule = getattr(cmodule, python_object)
-                    if do_initialize:  cmodule = cmodule()
+                    for po in python_object: cmodule = getattr(cmodule, po)
                 except:         cmodule, failed = None, f'[!] Could not import object {python_object} from module "{cpath}"'
         else:                   cmodule, failed = None, f'[!] Could not import module "{cpath}"'
     else:                       cmodule, failed = None, f"[!] File Not found @ {cpath}"
