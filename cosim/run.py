@@ -1,35 +1,10 @@
 
-# ------------------------------------------------------------------------------------------
-# Module Import
-# ------------------------------------------------------------------------------------------
-def ImportCustomModule(python_file:str, python_object:str='', do_initialize:bool=False):
-    r""" Import a custom module from a python file and optionally initialize it """
-    import os, importlib.util
-    cpath = os.path.abspath(python_file)
-    failed=""
-    if os.path.isfile(cpath): 
-        try: 
-            # from https://stackoverflow.com/questions/67631/how-can-i-import-a-module-dynamically-given-the-full-path
-            cspec = importlib.util.spec_from_file_location("", cpath)
-            cmodule = importlib.util.module_from_spec(cspec)
-            cspec.loader.exec_module(cmodule)
-            success=True
-        except: success=False #exit(f'[!] Could import user-module "{cpath}"')
-        if success: 
-            if python_object:
-                try:
-                    cmodule = getattr(cmodule, python_object)
-                    if do_initialize:  cmodule = cmodule()
-                except:         cmodule, failed = None, f'[!] Could not import object {python_object} from module "{cpath}"'
-        else:                   cmodule, failed = None, f'[!] Could not import module "{cpath}"'
-    else:                       cmodule, failed = None, f"[!] File Not found @ {cpath}"
-    return cmodule, failed
-
+import argparse, os, json, requests, io, pickle, time
+from sys import exit
+from . basic import GTISEP, now, ImportCustomModule
 # ------------------------------------------------------------------------------------------
 # arguments parsing
 # ------------------------------------------------------------------------------------------
-import argparse, os, json, requests, io, pickle, time
-from sys import exit
 argp = argparse.ArgumentParser()
 argp.add_argument('--info', type=str, default='')
 argp.add_argument('--base', type=str, default='')
@@ -37,8 +12,13 @@ argp.add_argument('--mods', type=str, default='')
 argp.add_argument('--log', type=str, default='')
 parsed = argp.parse_args()
 
+TS = []
 # ------------------------------------------------------------------------------------------
-TS1 = time.perf_counter() # start_setup
+
+# START
+
+# ------------------------------------------------------------------------------------------
+TS.append((time.perf_counter(), now(), 'start_setup'))
 # ------------------------------------------------------------------------------------------
 WORKDIR = f'{parsed.base}' 
 if not WORKDIR: exit(f'Work dir not provided')
@@ -77,7 +57,7 @@ else:
         logging.error(msg) 
         exit()
 
-print(f'\n============================================================\n')
+sprint(f'\n============================================================\n')
 J = parsed.info
 if not J: fexit(f'No task information provided')
 J = os.path.abspath(J)
@@ -85,9 +65,9 @@ if not os.path.isfile(J): fexit(f'No task found at {J}')
 with open(J, 'r') as j: task = json.load(j)
 sprint(f'Start Task:\n{task["uid"]}')
 sprint('\n')
-sprint(f'\n{task=}\n')
+#sprint(f'\n{task=}\n')
 # ------------------------------------------------------------------------------------------
-TS2 = time.perf_counter() # _end_setup_start_input_load
+TS.append((time.perf_counter(), now(), '_end_setup_start_input_load'))
 # ------------------------------------------------------------------------------------------
 # get the inputs
 dargs = {}
@@ -97,7 +77,7 @@ for itask in task['inputs']:
     if not os.path.isfile(ipath): fexit(f'Failed to fetch inputs from {ipath}')
     with open(ipath, 'rb') as j: dargs[itask] = pickle.load(j)
 # ------------------------------------------------------------------------------------------
-TS3 = time.perf_counter() # _end_input_load_start_task
+TS.append((time.perf_counter(), now(), '_end_input_load_start_task'))
 # ------------------------------------------------------------------------------------------
 # import task to be performed
 taskF, failed = ImportCustomModule(python_file=os.path.join(MODSDIR, f"{task['name']}.py"), python_object='main')
@@ -106,40 +86,31 @@ if failed: exit(f'Could not load task from {taskF}, {failed}')
 sprint(f'Executing task {taskF.__name__}')
 douts = taskF(**dargs)
 # ------------------------------------------------------------------------------------------
-TS4 = time.perf_counter() # __end_task_start_send_output
+TS.append((time.perf_counter(), now(), '__end_task_start_send_output'))
 # ------------------------------------------------------------------------------------------
-sprint(f'Finished executing task {taskF.__name__}\noutputs={douts}\n')
+sprint(f'Finished executing task {taskF.__name__} with {len(douts)} outputs')
 # send outputs
 for oname,iout in zip(task['outputs'], douts):
-    
-    #filename = f'{task["uid"]}_{oname}'
-    #filepath = os.path.join(DATADIR, filename)
+
+    ntask, nloc, nurl, durl = task['outsend'][oname] # ["tB", "E", "http://127.0.0.1:nport", "http://127.0.0.1:dport"]
+    filename = f'{task["uid"]}{GTISEP}{oname}'
+
     buffer = io.BytesIO()
-    #with open(filepath, 'wb') as j: pickle.dump(iout, j)
     buffer.write(pickle.dumps(iout))
     buffer.seek(0)
-    ntask, nloc, xurl, nport, dport = task['outsend'][oname] # "outsend": {"y1": ["tB", "E", "http://127.0.0.1", nport, dport]
-    filename = f'{task["uid"]}_{oname}'
-    response=requests.post(f'{xurl}:{dport}/data/{filename}', files={"data":buffer})
+    response=requests.post(f'{durl}/data/{filename}', files={"data":buffer})
     sprint(f'Data-sent, response code is {response.status_code}')
     del buffer
-    epoint = 'note' if ntask else 'out'
-    eurl=f'{xurl}:{nport}/{epoint}'
-    etaskid = f'{task["fid"]}_{ntask}'
+    
+    eurl=f'{nurl}/{'notify' if ntask else 'out'}'
+    etaskid = f'{task["fid"]}{GTISEP}{ntask}'
     sprint(f'Sending task {etaskid} output {oname} to {eurl}')
-    response = requests.post(
-        url=eurl,
-        json={
-            'uid': etaskid,
-            'outputs': {oname: f'{filename}'},
-        }
-    )
+    response = requests.post(url=eurl, json={'uid': etaskid, 'outputs': {oname: f'{filename}'},})
     sprint(f'Notification-sent, response code is {response.status_code}')
 
 # ------------------------------------------------------------------------------------------
-TS5 = time.perf_counter() # __end_send_output
+TS.append((time.perf_counter(), now(), '__end_send_output'))
 # ------------------------------------------------------------------------------------------
 
-TS = (TS1, TS2, TS3, TS4, TS5,)
 sprint(f'Finished Task:\n{task["uid"]}\n⌛:{TS}:\n')
 # ------------------------------------------------------------------------------------------
