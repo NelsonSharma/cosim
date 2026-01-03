@@ -7,6 +7,7 @@ import datetime, os, json, pickle, importlib.util
 # ------------------------------------------------------------------------------------------
 
 GTISEP = '_' # task id seperator
+FIDSEP = '-' # flow id seperator
 MODSEP = "." # module.caller
 DEFCALL = "main" # default caller
 # ------------------------------------------------------------------------------------------

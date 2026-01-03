@@ -1,6 +1,6 @@
 
 import requests
-from . basic import GTISEP, now
+from . basic import GTISEP, FIDSEP, now
 
 class Manager:
 
@@ -43,7 +43,7 @@ class Manager:
         """
         node_id = infra[decision[flow.ENTRY]]['name']
         flow_id = now()
-        fid = f'{node_id}{GTISEP}{flow_id}'
+        fid = f'{node_id}{FIDSEP}{flow_id}'
         for n in flow.NODES: 
             flow.INFO[n]['name'] = n
             flow.INFO[n]['offl'] = decision[n]
