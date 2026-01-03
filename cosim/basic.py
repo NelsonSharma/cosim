@@ -17,6 +17,16 @@ DEFCALL = "main" # default caller
 def now(start:str='', sep:str='', end:str='') -> str:
     return (start + datetime.datetime.strftime(datetime.datetime.now(), sep.join(["%Y", "%m", "%d", "%H", "%M", "%S", "%f"])) + end)
 
+def VALIDATE_PATH(base, req):
+    target = os.path.abspath(os.path.join(base, req))
+    rel = os.path.relpath(target, base)
+    if rel.startswith(os.pardir + os.sep) or rel == os.pardir: return None
+    else: return target
+
+def str2bytes(size):
+    sizes = dict(KB=2**10, MB=2**20, GB=2**30, TB=2**40)
+    return int(float(size[:-2])*sizes.get(size[-2:].upper(), 0))
+
 # ------------------------------------------------------------------------------------------
 
 def ImportCustomModule(python_file:str, python_object:list):

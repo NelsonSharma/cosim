@@ -31,7 +31,7 @@ source .venv/bin/activate
 * install required packages
 
 ```shell
-python -m pip install Flask waitress matplotlib networkx requests
+python -m pip install numpy Flask waitress matplotlib networkx requests
 ```
 
 * install `cosim` as package

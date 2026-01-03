@@ -1,7 +1,7 @@
 
 import argparse, os, json, requests, io, pickle, time, datetime
 from sys import exit
-from . basic import GTISEP, MODSEP, DEFCALL, ImportCustomModule
+from .basic import GTISEP, MODSEP, DEFCALL, ImportCustomModule
 now = datetime.datetime.now
 # ------------------------------------------------------------------------------------------
 # arguments parsing
@@ -117,9 +117,15 @@ for oname,iout in zip(task['outputs'], douts):
     response = requests.post(url=eurl, json={'uid': etaskid, 'outputs': {oname: f'{filename}'},})
     sprint(f'Notification-sent, response code is {response.status_code}')
 
+    if not ntask:  
+        sprint(f'Sending FIN.{task["fid"]}.{task["uid"]} notification to offloader')
+        offurl = f"{task['offloader']}/fin"
+        response = requests.post(url=offurl, json={'uid': etaskid, 'output':f'{filename}', })
+        sprint(f'Notification-sent, response code is {response.status_code}, {response.json()}')
 # ------------------------------------------------------------------------------------------
 TS.append((time.perf_counter(), now(), 'TASK_END'))
 # ------------------------------------------------------------------------------------------
+
 
 DeltaPs, DeltaTs = [], []
 for i in range(len(TS)-1):

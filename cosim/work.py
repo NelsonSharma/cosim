@@ -13,6 +13,7 @@ if __name__!='__main__': exit(f'[!] can not import {__name__}.{__file__}')
 
 import argparse, os
 argp = argparse.ArgumentParser()
+argp.add_argument('--infra',           type=str, default='',        help='location of infra.json')
 argp.add_argument('--mods',            type=str, default='',        help='location of external modules (for custom tasks)')
 argp.add_argument('--base',            type=str, default='base',    help='base directory to store and serve files')
 argp.add_argument('--script',          type=str, default='python3', help='python executable to run tasks')
@@ -34,9 +35,12 @@ parsed = argp.parse_args()
 # ------------------------------------------------------------------------------------------
 # imports
 # ------------------------------------------------------------------------------------------
+from .basic import VALIDATE_PATH, str2bytes, Kio
+from .flow import Flow
+from .man import Manager
 import logging, subprocess, datetime, json, random
 from sys import exit
-from flask import Flask, request, send_file, abort # redirect, url_for,
+from flask import Flask, request, send_file, abort, jsonify # redirect, url_for,
 from waitress import serve 
 PROXY_FIX=bool(parsed.https)
 if PROXY_FIX: from werkzeug.middleware.proxy_fix import ProxyFix
@@ -104,9 +108,7 @@ else:
 # ------------------------------------------------------------------------------------------
 sprint(f'Starting...')
 if PROXY_FIX: sprint(f'↪ PROXY_FIX is True, assume that reverse proxy engine is running ... ')
-
 sprint(f'↪ Logging @ {LOGFILE}')
-
 sprint(f'↪ Work directory is {WORKDIR}')
 
 try: os.makedirs(TASKDIR, exist_ok=True)
@@ -120,6 +122,12 @@ sprint(f'↪ Data directory is {DATADIR}')
 EXESCRIPT = f'{parsed.script}' 
 if not EXESCRIPT: fexit(f'[!] Tasks executor was not specified')
 sprint(f'↪ Tasks executor is {EXESCRIPT}')
+
+INFRAJSON = f'{parsed.infra}' 
+if not INFRAJSON: fexit(f'[!] Infra Json was not specified')
+INFRAJSON = os.path.abspath(INFRAJSON)
+INFRA = Kio.LoadJSON(INFRAJSON)
+sprint(f'↪ Infra loaded from {INFRAJSON}')
 # ------------------------------------------------------------------------------------------
 
 
@@ -129,21 +137,6 @@ sprint(f'↪ Tasks executor is {EXESCRIPT}')
 # ------------------------------------------------------------------------------------------
 
 TASKQ = {} # maintains a dict of pending tasks
-def PrintQ():
-    sprint("\n\nTask Queue:")
-    for uid, info in TASKQ.items():
-        sprint(f'Task-ID: {uid}')
-        for k,v in info.items(): sprint(f'\t{k}: {v}')
-
-def VALIDATE_PATH(base, req):
-    target = os.path.abspath(os.path.join(base, req))
-    rel = os.path.relpath(target, base)
-    if rel.startswith(os.pardir + os.sep) or rel == os.pardir: return None
-    else: return target
-
-def str2bytes(size):
-    sizes = dict(KB=2**10, MB=2**20, GB=2**30, TB=2**40)
-    return int(float(size[:-2])*sizes.get(size[-2:].upper(), 0))
 
 # ------------------------------------------------------------------------------------------
 
@@ -169,6 +162,48 @@ app.secret_key = parsed.secret if parsed.secret else f'{random.randint(11111, 99
 
 # ------------------------------------------------------------------------------------------
 # Routes
+# ------------------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------------------
+@app.route("/fin", methods=["POST"])
+@app.route("/fin/", methods=["POST"])
+def route_fin():
+    """ fin task
+        json={'uid': etaskid, 'output':f'{filename}', }
+    """
+    fintask = request.get_json()
+    sprint(f'Task Finished {fintask}')
+    return jsonify(fintask), 200
+# ------------------------------------------------------------------------------------------
+@app.route("/new", methods=["POST"])
+@app.route("/new/", methods=["POST"])
+def route_new():
+    """ admit new task
+        dict(
+            node = self.node_id,
+            info = choosen_info,
+            input = choosen_filename, 
+        )
+    """
+    newtask = request.get_json()
+    nodeid = newtask['node']
+    sprint(f'Admit New Flow from {nodeid}')
+
+    newflow = Flow(**(newtask['info']))
+    decision, locations = Manager.GetDecision(newflow, INFRA)
+    assert decision[newflow.ENTRY] == nodeid, f'Entry task {newflow.ENTRY} should be placed on {nodeid} but found on {decision[newflow.ENTRY]}'
+    
+    newflow = Manager.PrepareFlow(
+        flow = newflow,
+        decision = decision,
+        infra = INFRA,
+        offloader = newtask['offloader'],
+    )
+
+    offloading_status = Manager.Offload(newflow, decision, INFRA)
+    rstatus, data_url = Manager.StartFlow(newflow, decision, INFRA, initial_input_name = newtask['input'])
+
+    return jsonify(dict(nodeid=nodeid, decision=decision, offloading_status=offloading_status, rstatus=rstatus, data_url=data_url)), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------

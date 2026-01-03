@@ -1,6 +1,6 @@
 
 import requests
-from . basic import GTISEP, FIDSEP, now
+from .basic import GTISEP, FIDSEP, now
 
 class Manager:
 
@@ -31,7 +31,7 @@ class Manager:
         return decision, locations
 
     @staticmethod
-    def PrepareFlow(flow, decision, infra):
+    def PrepareFlow(flow, decision, infra, offloader):
         """
         Prepare a flow for offloading
 
@@ -46,9 +46,10 @@ class Manager:
         fid = f'{node_id}{FIDSEP}{flow_id}'
         for n in flow.NODES: 
             flow.INFO[n]['name'] = n
-            flow.INFO[n]['offl'] = decision[n]
+            flow.INFO[n]['loc'] = decision[n]
             flow.INFO[n]['uid'] = f'{fid}{GTISEP}{n}'
             flow.INFO[n]['fid'] = f'{fid}'
+            flow.INFO[n]['offloader'] = f'{offloader}'
             flow.INFO[n]['outsend'] = {
                 flow.edges[m]['data'] : (
                     m[-1], 
