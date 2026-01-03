@@ -1,6 +1,8 @@
 # cosim 🖧
 
-(C)omputation (O)ffloading (Sim)ulator
+<span style="color:limegreen; font-weight:bold;">
+<span style="color:firebrick; font-weight:bold;">(C)</span>omputation <span style="color:firebrick; font-weight:bold;">(O)</span>ffloading <span style="color:firebrick; font-weight:bold;">(Sim)</span>ulator
+</span>
 
 ---
 
