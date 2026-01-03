@@ -98,7 +98,6 @@ class Manager:
     def GetResult(data_url):
         out = None
         response = requests.get(url=data_url)
-        res_data = response.status_code, response.text, response.url
         if response.status_code == 200:
             from io import BytesIO
             buffer = BytesIO()
@@ -107,6 +106,6 @@ class Manager:
             import pickle
             out = pickle.loads(buffer.getbuffer())
             del buffer
-        return out, res_data
+        return out, response.status_code
 
 

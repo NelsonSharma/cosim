@@ -1,7 +1,8 @@
 
-import argparse, os, json, requests, io, pickle, time
+import argparse, os, json, requests, io, pickle, time, datetime
 from sys import exit
-from . basic import GTISEP, now, ImportCustomModule
+from . basic import GTISEP, ImportCustomModule
+now = datetime.datetime.now
 # ------------------------------------------------------------------------------------------
 # arguments parsing
 # ------------------------------------------------------------------------------------------
@@ -18,7 +19,7 @@ TS = []
 # START
 
 # ------------------------------------------------------------------------------------------
-TS.append((time.perf_counter(), now(), 'start_setup'))
+TS.append((time.perf_counter(), now(), 'TASK_BEGIN'))
 # ------------------------------------------------------------------------------------------
 WORKDIR = f'{parsed.base}' 
 if not WORKDIR: exit(f'Work dir not provided')
@@ -67,7 +68,7 @@ sprint(f'Start Task:\n{task["uid"]}')
 sprint('\n')
 #sprint(f'\n{task=}\n')
 # ------------------------------------------------------------------------------------------
-TS.append((time.perf_counter(), now(), '_end_setup_start_input_load'))
+TS.append((time.perf_counter(), now(), 'LOAD_INPUTS'))
 # ------------------------------------------------------------------------------------------
 # get the inputs
 dargs = {}
@@ -77,7 +78,7 @@ for itask in task['inputs']:
     if not os.path.isfile(ipath): fexit(f'Failed to fetch inputs from {ipath}')
     with open(ipath, 'rb') as j: dargs[itask] = pickle.load(j)
 # ------------------------------------------------------------------------------------------
-TS.append((time.perf_counter(), now(), '_end_input_load_start_task'))
+TS.append((time.perf_counter(), now(), 'EXECUTE_TASK'))
 # ------------------------------------------------------------------------------------------
 # import task to be performed
 taskF, failed = ImportCustomModule(python_file=os.path.join(MODSDIR, f"{task['name']}.py"), python_object='main')
@@ -86,7 +87,7 @@ if failed: exit(f'Could not load task from {taskF}, {failed}')
 sprint(f'Executing task {taskF.__name__}')
 douts = taskF(**dargs)
 # ------------------------------------------------------------------------------------------
-TS.append((time.perf_counter(), now(), '__end_task_start_send_output'))
+TS.append((time.perf_counter(), now(), 'SEND_OUTPUTS'))
 # ------------------------------------------------------------------------------------------
 sprint(f'Finished executing task {taskF.__name__} with {len(douts)} outputs')
 # send outputs
@@ -109,8 +110,16 @@ for oname,iout in zip(task['outputs'], douts):
     sprint(f'Notification-sent, response code is {response.status_code}')
 
 # ------------------------------------------------------------------------------------------
-TS.append((time.perf_counter(), now(), '__end_send_output'))
+TS.append((time.perf_counter(), now(), 'TASK_END'))
 # ------------------------------------------------------------------------------------------
 
-sprint(f'Finished Task:\n{task["uid"]}\n⌛:{TS}:\n')
+DeltaPs, DeltaTs = [], []
+for i in range(len(TS)-1):
+    DeltaPs.append(TS[i+1][0] - TS[i][0])
+    DeltaTs.append(str(TS[i+1][1] - TS[i][1]))
+
+DeltaP =  TS[-1][0] - TS[0][0]
+DeltaT =  str(TS[-1][1]-TS[0][1])
+
+sprint(f'Finished Task:\n{task["uid"]}\n⌛\nCounter [{DeltaP}]\nTime [{DeltaT}]\n')
 # ------------------------------------------------------------------------------------------
