@@ -1,8 +1,6 @@
 # cosim 🖧
 
-<span style="color:limegreen; font-weight:bold;">
-<span style="color:firebrick; font-weight:bold;">(C)</span>omputation <span style="color:firebrick; font-weight:bold;">(O)</span>ffloading <span style="color:firebrick; font-weight:bold;">(Sim)</span>ulator
-</span>
+**C**omputation **O**ffloading **Sim**ulator
 
 ---
 
@@ -56,9 +54,7 @@ For a complete offloading example with custom workflows and infrastructure, refe
 
 1. Setting up Offloading Infrastructure - [Infra.ipynb](./Infra.ipynb)
 
-2. Setting up workflows with custom tasks -
-    * Using `main` calls - [Flow.ipynb](./Flow.ipynb)
-    * Using nested calls - [Flows.ipynb](./Flows.ipynb)
+2. Setting up workflows with custom tasks - [Flow.ipynb](./Flow.ipynb)
 
 3. Setting up Offloading decisions and execution - [Offload.ipynb](./Offload.ipynb)
 
