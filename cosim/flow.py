@@ -1,18 +1,18 @@
-
 import networkx as nx
 import matplotlib.pyplot as plt
 
 class Flow(nx.DiGraph):
 
-    def __init__(self, **info): 
+    def __init__(self, name, **info): 
+        assert len(info) > 2, f"must have atleast three tasks (nodes) - inclding one entry(1) and one exit(-1)"
         super().__init__()
+        self.NAME = name
         self.INFO = {**info}
-
-        assert len(self.INFO) > 2, f"must have atleast three tasks (nodes) - inclding one entry(1) and one exit(-1)"
+        
         for n, d in self.INFO.items(): self.add_node(n, **d)
         self.NODES = list(self.nodes)
         self.ENTRY, self.EXIT = self.NODES[0], self.NODES[-1] # first task is entry and last is exit
-        
+        self.NAME = name
         for n in self.NODES:
             if n != self.EXIT:
                 for o in self.nodes[n]['outputs']:

@@ -1,14 +1,9 @@
 # ------------------------------------------------------------------------------------------
 import datetime, os, json, pickle, importlib.util
 # ------------------------------------------------------------------------------------------
+UIDSEP = '_' # node-flow-task uid-seperator - used in work.py
 
-# ------------------------------------------------------------------------------------------
-# Custom Symbols
-# ------------------------------------------------------------------------------------------
-
-GTISEP = '_' # task id seperator
-FIDSEP = '-' # flow id seperator
-MODSEP = "." # module.caller
+# used in RUN.py
 DEFCALL = "main" # default caller
 # ------------------------------------------------------------------------------------------
 # Custom Functions
@@ -17,7 +12,7 @@ DEFCALL = "main" # default caller
 def now(start:str='', sep:str='', end:str='') -> str:
     return (start + datetime.datetime.strftime(datetime.datetime.now(), sep.join(["%Y", "%m", "%d", "%H", "%M", "%S", "%f"])) + end)
 
-def VALIDATE_PATH(base, req):
+def ValidatePath(base, req):
     target = os.path.abspath(os.path.join(base, req))
     rel = os.path.relpath(target, base)
     if rel.startswith(os.pardir + os.sep) or rel == os.pardir: return None
@@ -29,7 +24,7 @@ def str2bytes(size):
 
 # ------------------------------------------------------------------------------------------
 
-def ImportCustomModule(python_file:str, python_object:list):
+def ImportCustomModule(python_file:str, python_object:str='', do_initialize:bool=False):
     r""" Import a custom module from a python file and optionally initialize it """
     cpath = os.path.abspath(python_file)
     failed=""
@@ -44,7 +39,8 @@ def ImportCustomModule(python_file:str, python_object:list):
         if success: 
             if python_object:
                 try:
-                    for po in python_object: cmodule = getattr(cmodule, po)
+                    cmodule = getattr(cmodule, python_object)
+                    if do_initialize:  cmodule = cmodule()
                 except:         cmodule, failed = None, f'[!] Could not import object {python_object} from module "{cpath}"'
         else:                   cmodule, failed = None, f'[!] Could not import module "{cpath}"'
     else:                       cmodule, failed = None, f"[!] File Not found @ {cpath}"

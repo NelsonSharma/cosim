@@ -13,8 +13,8 @@ if __name__!='__main__': exit(f'[!] can not import {__name__}.{__file__}')
 
 import argparse, os
 argp = argparse.ArgumentParser()
-argp.add_argument('--infra',           type=str, default='',        help='location of infra.json')
-argp.add_argument('--mods',            type=str, default='',        help='location of external modules (for custom tasks)')
+argp.add_argument('--policy',              type=str, default='',        help='abs - location of decision maker script')
+argp.add_argument('--infra',           type=str, default='',        help='abs- location of infra.json')
 argp.add_argument('--base',            type=str, default='base',    help='base directory to store and serve files')
 argp.add_argument('--script',          type=str, default='python3', help='python executable to run tasks')
 argp.add_argument('--maxupsize',       type=str, default='500GB',   help='http_body_size for waitress',) 
@@ -26,6 +26,7 @@ argp.add_argument('--log',             type=str, default='log.txt',  help='keep 
 argp.add_argument('--verbose',         type=int, default=1,         help='set to 0 for no verbose')
 argp.add_argument('--secret',          type=str, default='',        help='fask secret, keep blank to generate new on run')
 argp.add_argument('--https',           type=int, default=0,         help='set to 1 if reverse proxy with https is used')
+argp.add_argument('--node_id',          type=str, default='')
 parsed = argp.parse_args()
 
 # ------------------------------------------------------------------------------------------
@@ -33,11 +34,15 @@ parsed = argp.parse_args()
 
 
 # ------------------------------------------------------------------------------------------
+# Custom Symbols
+# ------------------------------------------------------------------------------------------
+
+
+
+# ------------------------------------------------------------------------------------------
 # imports
 # ------------------------------------------------------------------------------------------
-from .basic import VALIDATE_PATH, str2bytes, Kio
-from .flow import Flow
-from .man import Manager
+
 import logging, subprocess, datetime, json, random
 from sys import exit
 from flask import Flask, request, send_file, abort, jsonify # redirect, url_for,
@@ -101,7 +106,18 @@ else:
 # ------------------------------------------------------------------------------------------
 
 
+# ------------------------------------------------------------------------------------------
+# Globals
+# ------------------------------------------------------------------------------------------
 
+
+from .basic import DEFCALL, ValidatePath, str2bytes, Kio, ImportCustomModule
+from .flow import Flow
+from .man import Manager
+from . import db
+
+FLOWS = db.Flows(Creator=Flow)
+TASKQ = {} # maintains a dict of pending tasks
 
 # ------------------------------------------------------------------------------------------
 # Initialization
@@ -131,14 +147,15 @@ sprint(f'↪ Infra loaded from {INFRAJSON}')
 # ------------------------------------------------------------------------------------------
 
 
+if parsed.policy:   # nodes, locs = newflow.NODES, set(INFRA.keys())
+    policy_file = os.path.abspath(parsed.policy)
+    Decide, failed = ImportCustomModule(python_file=policy_file, python_object=DEFCALL)
+    if failed: fexit(f'↪ policy could not be loaded from {policy_file}.{DEFCALL}')
+    else: sprint(f'↪ Decision Maker is {Decide.__name__}/{Decide.__code__.co_filename}')
+else:
+    Decide = lambda n, l: {k:l[0] for k in n}
+    sprint(f'↪ Decision Maker not specified, using no-offloading scheme.')
 
-# ------------------------------------------------------------------------------------------
-# Globals
-# ------------------------------------------------------------------------------------------
-
-TASKQ = {} # maintains a dict of pending tasks
-
-# ------------------------------------------------------------------------------------------
 
 
 
@@ -165,59 +182,19 @@ app.secret_key = parsed.secret if parsed.secret else f'{random.randint(11111, 99
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
-@app.route("/fin", methods=["POST"])
-@app.route("/fin/", methods=["POST"])
-def route_fin():
-    """ fin task
-        json={'uid': etaskid, 'output':f'{filename}', }
-    """
-    fintask = request.get_json()
-    sprint(f'Task Finished {fintask}')
-    return jsonify(fintask), 200
-# ------------------------------------------------------------------------------------------
-@app.route("/new", methods=["POST"])
-@app.route("/new/", methods=["POST"])
-def route_new():
-    """ admit new task
-        dict(
-            node = self.node_id,
-            info = choosen_info,
-            input = choosen_filename, 
-        )
-    """
-    newtask = request.get_json()
-    nodeid = newtask['node']
-    sprint(f'Admit New Flow from {nodeid}')
-
-    newflow = Flow(**(newtask['info']))
-    decision, locations = Manager.GetDecision(newflow, INFRA)
-    assert decision[newflow.ENTRY] == nodeid, f'Entry task {newflow.ENTRY} should be placed on {nodeid} but found on {decision[newflow.ENTRY]}'
-    
-    newflow = Manager.PrepareFlow(
-        flow = newflow,
-        decision = decision,
-        infra = INFRA,
-        offloader = newtask['offloader'],
-    )
-
-    offloading_status = Manager.Offload(newflow, decision, INFRA)
-    rstatus, data_url = Manager.StartFlow(newflow, decision, INFRA, initial_input_name = newtask['input'])
-
-    return jsonify(dict(nodeid=nodeid, decision=decision, offloading_status=offloading_status, rstatus=rstatus, data_url=data_url)), 200
-# ------------------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------------------
 @app.route("/add", methods=["POST"])
 @app.route("/add/", methods=["POST"])
 def route_add():
     """ adds task to device's TASKQ """
     global TASKQ
     taskinfo = request.get_json()
-    taskid = taskinfo['uid']
-    sprint(f'Recived Task {taskid}')
-    TASKQ[taskid] = {**taskinfo}
-    TASKQ[taskid]["inget"] = {} # initialize waiting queue
-    return {"received": taskid}, 200
+    taskname = taskinfo['flow_name']
+    taskuid = taskinfo['uid']
+    sprint(f'Recived Task {taskname}/{taskuid}')
+    TASKQ[taskuid] = {**taskinfo}
+    TASKQ[taskuid]["inget"] = {} # initialize waiting queue
+    #Kio.SaveJSON(os.path.join(WORKDIR, f'TASKQ_STA_{taskuid}.json'), TASKQ)
+    return {"received": taskuid}, 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -226,29 +203,30 @@ def route_add():
 def route_note():
     """ signals outputs/inputs """
     datainfo = request.get_json()
-    taskid = datainfo['uid']
+    taskname = datainfo['flow_name']
+    taskuid =  datainfo['uid']
     global TASKQ
-    sprint(f'Recived data for {taskid} - Current Queue len is {len(TASKQ)}')
-    for o,url in datainfo['outputs'].items(): TASKQ[taskid]["inget"][o] = url
+    sprint(f'Recived data for {taskname}/{taskuid} - Current Queue len is {len(TASKQ)}')
+    for o,url in datainfo['outputs'].items(): TASKQ[taskuid]["inget"][o] = url
     launched = [] # check which task can be launched
     for uid, taskinfo in TASKQ.items():
         can_launch = not (False in [ i in taskinfo["inget"] for i in taskinfo['inputs'] ])
         if can_launch: 
             taskpath = os.path.join(TASKDIR, f'{uid}.json')
             with open(taskpath, 'w') as f: json.dump(taskinfo, f)
-            sprint(f'Starting task {uid} using {taskpath}')
+            sprint(f'Starting task {uid} using {taskpath} executable is {os.path.abspath(EXESCRIPT)}')
             subprocess.Popen([
                 f"{EXESCRIPT}", "-m", "cosim.run", 
-                "--mods", f'{parsed.mods}', 
                 "--base", f"{WORKDIR}", 
                 "--info", f'{taskpath}', 
                 "--log", f'{uid}.log',
+                "--node_id", f'{parsed.node_id}',
                 ])
             launched.append(uid)
     sprint(f'Lanch {len(launched)} Tasks: {launched=}')
     if launched:
         for uid in launched: del TASKQ[uid]
-    return {"received": taskid, "data": list(datainfo['outputs'].keys())}, 200
+    return {"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}, 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -257,12 +235,69 @@ def route_note():
 def route_out():
     """ signals avavilability of final output """
     datainfo = request.get_json()
-    taskid = datainfo['uid'][:-1]
-    sprint(f'Recived output for {taskid}')
+    taskname = datainfo['flow_name']
+    taskuid =  datainfo['uid']
+    sprint(f'Recived output for {taskname}/{taskuid}')
     for o,url in datainfo['outputs'].items(): 
         outfile = os.path.join(DATADIR, url)
-        sprint(f'Result {taskid}.{o}\n{url} @ [{outfile}] [ 🟢 ]')
-    return {"received": taskid, "data": list(datainfo['outputs'].keys())}, 200
+        sprint(f'Result {taskname}/{taskuid}.{o}\n{url} @ [{outfile}] [ 🟢 ]')
+    return {"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}, 200
+# ------------------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------------------
+@app.route("/fin", methods=["POST"])
+@app.route("/fin/", methods=["POST"])
+def route_fin():
+    """ fin task
+        json={'uid': etaskid, 'output':f'{filename}', }
+    """
+    fintask = request.get_json()
+    sprint(f'Task Finished {fintask}')
+    #Kio.SaveJSON(os.path.join(WORKDIR, f'TASKQ_FIN_{fintask["uid"]}.json'), TASKQ)
+    return jsonify(fintask), 200
+# ------------------------------------------------------------------------------------------
+
+
+@app.route("/new", methods=["POST"])
+@app.route("/new/", methods=["POST"])
+def route_new():
+    """ admit new task
+        dict(
+            node_id = ,
+            flow_name = ,
+            input = , 
+        )
+    """
+    newtask = request.get_json()
+    node_id = newtask['node_id']
+    flow_name =  newtask['flow_name']
+    sprint(f'Admit New Flow {flow_name} from {node_id}')
+    newflow = FLOWS[flow_name]
+
+    nodes, locs = newflow.NODES, list(INFRA.keys())
+    if locs[0]!=node_id: 
+        sprint(f'Error: First node in location list should be the {node_id} instead of {locs[0]}')
+        return jsonify(dict(type='mismatch', arg=(locs[0], node_id))), 400
+    decision = Decide(nodes, locs) 
+    for n in newflow.NODES:
+        if n not in decision: return jsonify(dict(type='decision', arg=(n, list(decision.keys())))), 400
+        if decision[n] not in locs: return jsonify(dict(type='location', arg=(decision[n], locs))), 400
+        if decision[newflow.ENTRY] != node_id: 
+            sprint(f'Warning: Setting entry task to offload locally {node_id} instead of {decision[newflow.ENTRY]}')
+            decision[newflow.ENTRY] = node_id
+    
+    offloader = f"{'https' if PROXY_FIX else 'http'}://{parsed.host}:{parsed.port}"
+    newflow = Manager.PrepareFlow(
+        flow = newflow,
+        decision = decision,
+        infra = INFRA,
+        offloader = offloader,
+    )
+
+    offloading_status = Manager.Offload(newflow, decision, INFRA)
+    rstatus = Manager.StartFlow(newflow, decision, INFRA, initial_input_name = newtask['input'])
+
+    return jsonify(dict(nodeid=node_id, decision=decision, offloading_status=offloading_status, rstatus=rstatus)), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -270,7 +305,7 @@ def route_out():
 @app.route('/data/<path:req_path>', methods =['GET', 'POST'],)
 def route_data(req_path):
     if not req_path: return abort(404)
-    abs_path = VALIDATE_PATH(DATADIR, req_path)
+    abs_path = ValidatePath(DATADIR, req_path)
     if abs_path is None: return abort(404)
     if request.method=='GET':
         if not os.path.isfile(abs_path): return abort(404)
@@ -303,7 +338,7 @@ serve(app, # https://docs.pylonsproject.org/projects/waitress/en/stable/runner.h
     max_request_body_size = str2bytes(parsed.maxupsize) ,
 )
 end_time = datetime.datetime.now()
-
+#Kio.SaveJSON(os.path.join(WORKDIR, 'TASKQ.json'), TASKQ)
 sprint('◉ server up-time was [{}]'.format(end_time - start_time))
 sprint(f'...Finished!')
 # ------------------------------------------------------------------------------------------
