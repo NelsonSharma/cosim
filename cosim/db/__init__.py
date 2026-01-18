@@ -2,14 +2,14 @@
 
 import os
 
-def List():
+def ListFlows():
     path = os.path.dirname(__file__)
     return [f for f in os.listdir(path) if (os.path.isdir(os.path.join(path, f)) and (not f.startswith("__")) and (not f.endswith("__")))]
 
-def Flows(Creator=None):
+def GetFlows(Creator=None):
     res = {}
     path = os.path.dirname(__file__)
-    flowlist = [(f, os.path.join(path, f, '__init__.py')) for f in List()]
+    flowlist = [(f, os.path.join(path, f, '__init__.py')) for f in ListFlows()]
     if Creator is None:
         for f, d in flowlist:
             with open(d, 'r') as c: res[f] = eval(c.read())
@@ -18,7 +18,11 @@ def Flows(Creator=None):
             with open(d, 'r') as c: res[f] = Creator(f, **eval(c.read()))
     return res
 
-
+def GetFlow(Name, Creator=None):
+    path =  os.path.join(os.path.dirname(__file__), Name, '__init__.py')
+    with open(path, 'r') as c:  res = eval(c.read())
+    if Creator is not None: res = Creator(Name, **res) 
+    return res
 
 
 __doc__="""

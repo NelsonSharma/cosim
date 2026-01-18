@@ -18,7 +18,9 @@ class Flow(nx.DiGraph):
                 for o in self.nodes[n]['outputs']:
                     for g in self.NODES:
                         if g != self.ENTRY:
-                            if o in self.nodes[g]['inputs']: self.add_edge(n, g, data=o)
+                            if o in self.nodes[g]['inputs']: 
+                                assert not self.has_edge(n,g), f'Cannot add edge {(n,g)} - already exists. All outputs must be added to single out-going edge'
+                                self.add_edge(n, g, data=o)
 
 
         self.LAYERS = tuple(nx.topological_generations(self))

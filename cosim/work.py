@@ -13,13 +13,13 @@ if __name__!='__main__': exit(f'[!] can not import {__name__}.{__file__}')
 
 import argparse, os
 argp = argparse.ArgumentParser()
-argp.add_argument('--policy',              type=str, default='',        help='abs - location of decision maker script')
+argp.add_argument('--policy',          type=str, default='',        help='abs - location of decision maker script')
 argp.add_argument('--infra',           type=str, default='',        help='abs- location of infra.json')
 argp.add_argument('--base',            type=str, default='base',    help='base directory to store and serve files')
 argp.add_argument('--script',          type=str, default='python3', help='python executable to run tasks')
 argp.add_argument('--maxupsize',       type=str, default='500GB',   help='http_body_size for waitress',) 
 argp.add_argument('--maxconnect',      type=int, default=1000,      help='maximum number of connections allowed') 
-argp.add_argument('--threads',         type=int, default=1,         help='waitress thread count') 
+argp.add_argument('--threads',         type=int, default=4,         help='waitress thread count') 
 argp.add_argument('--host',            type=str, default='127.0.0.1',      help='waitress server-interface, keep 0.0.0.0 to serve on all interfaces')
 argp.add_argument('--port',            type=str, default='9000',           help='waitress server-port')
 argp.add_argument('--log',             type=str, default='log.txt',  help='keep blank for no logging')
@@ -63,6 +63,7 @@ try: os.makedirs(WORKDIR, exist_ok=True)
 except: exit(f'[!] Workspace directory was not found and could not be created')
 TASKDIR = os.path.join(WORKDIR, "tasks")
 DATADIR = os.path.join(WORKDIR, "data")
+#RESDIR =  os.path.join(WORKDIR, "results")
 # ------------------------------------------------------------------------------------------
 
 
@@ -111,12 +112,12 @@ else:
 # ------------------------------------------------------------------------------------------
 
 
-from .basic import DEFCALL, ValidatePath, str2bytes, Kio, ImportCustomModule
+from .basic import UIDSEP, DEFCALL, ValidatePath, str2bytes, Kio, ImportCustomModule
 from .flow import Flow
 from .man import Manager
 from . import db
 
-FLOWS = db.Flows(Creator=Flow)
+FLOWS = db.GetFlows(Creator=Flow)
 TASKQ = {} # maintains a dict of pending tasks
 
 # ------------------------------------------------------------------------------------------
@@ -126,6 +127,10 @@ sprint(f'Starting...')
 if PROXY_FIX: sprint(f'↪ PROXY_FIX is True, assume that reverse proxy engine is running ... ')
 sprint(f'↪ Logging @ {LOGFILE}')
 sprint(f'↪ Work directory is {WORKDIR}')
+
+# try: os.makedirs(RESDIR, exist_ok=True)
+# except: fexit(f'[!] Results directory was not found and could not be created at {RESDIR}')
+# sprint(f'↪ Results directory is {RESDIR}')
 
 try: os.makedirs(TASKDIR, exist_ok=True)
 except: fexit(f'[!] Tasks directory was not found and could not be created at {TASKDIR}')
@@ -193,8 +198,7 @@ def route_add():
     sprint(f'Recived Task {taskname}/{taskuid}')
     TASKQ[taskuid] = {**taskinfo}
     TASKQ[taskuid]["inget"] = {} # initialize waiting queue
-    #Kio.SaveJSON(os.path.join(WORKDIR, f'TASKQ_STA_{taskuid}.json'), TASKQ)
-    return {"received": taskuid}, 200
+    return jsonify({"received": taskuid}), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -213,7 +217,8 @@ def route_note():
         can_launch = not (False in [ i in taskinfo["inget"] for i in taskinfo['inputs'] ])
         if can_launch: 
             taskpath = os.path.join(TASKDIR, f'{uid}.json')
-            with open(taskpath, 'w') as f: json.dump(taskinfo, f)
+            Kio.SaveJSON(taskpath, taskinfo)
+            #with open(taskpath, 'w') as f: json.dump(taskinfo, f)
             sprint(f'Starting task {uid} using {taskpath} executable is {os.path.abspath(EXESCRIPT)}')
             subprocess.Popen([
                 f"{EXESCRIPT}", "-m", "cosim.run", 
@@ -226,7 +231,7 @@ def route_note():
     sprint(f'Lanch {len(launched)} Tasks: {launched=}')
     if launched:
         for uid in launched: del TASKQ[uid]
-    return {"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}, 200
+    return jsonify({"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -241,7 +246,7 @@ def route_out():
     for o,url in datainfo['outputs'].items(): 
         outfile = os.path.join(DATADIR, url)
         sprint(f'Result {taskname}/{taskuid}.{o}\n{url} @ [{outfile}] [ 🟢 ]')
-    return {"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}, 200
+    return jsonify({"received": f"{taskname}/{taskuid}", "data": list(datainfo['outputs'].keys())}), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -253,10 +258,38 @@ def route_fin():
     """
     fintask = request.get_json()
     sprint(f'Task Finished {fintask}')
-    #Kio.SaveJSON(os.path.join(WORKDIR, f'TASKQ_FIN_{fintask["uid"]}.json'), TASKQ)
     return jsonify(fintask), 200
 # ------------------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------------------
+@app.route("/task_start", methods=["POST"])
+@app.route("/task_start/", methods=["POST"])
+def route_task_start():
+    """ task_start
+        json={'uid': etaskid, }
+    """
+    fintask = request.get_json()['uid']
+    sprint(f'NOTE: Task Started {fintask}')
+    return "ok", 200
+# ------------------------------------------------------------------------------------------
+@app.route("/task_end", methods=["POST"])
+@app.route("/task_end/", methods=["POST"])
+def route_task_end():
+    """ task_end
+        json=dict(
+            uid = task['uid'], 
+            name = task['flow_name'],
+            DeltaP = DeltaP, DeltaT=DeltaT, 
+            output_data_sent=output_data_sent, output_data_size=output_data_size,
+            )
+    """
+    endedtask = request.get_json()
+    sprint(f'NOTE: Task Finished {endedtask["name"]}.{endedtask["uid"]}')
+    sprint(f'TASK STATS\n Process Time: {endedtask["DeltaP"]}\n Pref Count: {endedtask["DeltaT"]}\n Data Sent: {endedtask["output_data_size"]}\n Outputs Sent: {endedtask["output_data_sent"]}\n')
+    # save on Offloading Manager's Task dir which should not have any offloaded tasks
+    Kio.SaveJSON(os.path.join(TASKDIR, f'{endedtask["uid"]}.json'), endedtask)
+    return "ok", 200
+# ------------------------------------------------------------------------------------------
 
 @app.route("/new", methods=["POST"])
 @app.route("/new/", methods=["POST"])
@@ -296,8 +329,8 @@ def route_new():
 
     offloading_status = Manager.Offload(newflow, decision, INFRA)
     rstatus = Manager.StartFlow(newflow, decision, INFRA, initial_input_name = newtask['input'])
-
-    return jsonify(dict(nodeid=node_id, decision=decision, offloading_status=offloading_status, rstatus=rstatus)), 200
+    output_filename = f'{newflow.INFO[newflow.EXIT]["uid"]}{UIDSEP}{newflow.INFO[newflow.EXIT]["outputs"][0]}'
+    return jsonify(dict(nodeid=node_id, decision=decision, offloading_status=offloading_status, rstatus=rstatus, output_filename=output_filename)), 200
 # ------------------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------------------
@@ -338,7 +371,6 @@ serve(app, # https://docs.pylonsproject.org/projects/waitress/en/stable/runner.h
     max_request_body_size = str2bytes(parsed.maxupsize) ,
 )
 end_time = datetime.datetime.now()
-#Kio.SaveJSON(os.path.join(WORKDIR, 'TASKQ.json'), TASKQ)
 sprint('◉ server up-time was [{}]'.format(end_time - start_time))
 sprint(f'...Finished!')
 # ------------------------------------------------------------------------------------------
