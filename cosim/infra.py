@@ -19,16 +19,6 @@ def EffectiveBandwidth(B):
     #for i in range(lm): dist_matrix[i,i] = np.inf
     return dist_matrix #<--- this turns the diagonals to inf  #print(dist_matrix)
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-def DefaultNode(name): return dict(
-        name=name,
-        nhost="<notify-ip>",
-        nport='<notify-port>',
-        dhost="<data-ip>",
-        dport='<data-port>',
-        https = False,
-        xy = (0.0, 0.0),
-    )  # a default node (attr dict)
-#=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 class Infra(nx.Graph):
 
@@ -38,7 +28,7 @@ class Infra(nx.Graph):
         N = L[0]
         TR = L[-1]
         DR = L[1:-1]
-        for i,n in enumerate(N): self.add_node(n, rate=float(TR[i]), **DefaultNode(n))
+        for i,n in enumerate(N): self.add_node(n, rate=float(TR[i]))
         BW = EffectiveBandwidth(DR) if Effective else DR
         for i,n in enumerate(N): 
             for j,k in enumerate(N): self.add_edge(n,k, rate=float(BW[i,j]))
